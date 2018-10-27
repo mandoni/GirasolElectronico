@@ -1,0 +1,1144 @@
+﻿;DISPLAY
+LIGHT 	EQU 0x20
+sLIGHT 	EQU 0x21
+wLIGHT 	EQU 0x22
+ID	EQU 0x23
+CONT 	EQU 0x24
+DATO	EQU 0x25
+
+;MOTOR 
+DATO_M	EQU 0X26
+d1	EQU 0X27
+d2	EQU 0X28
+COUNT	EQU 0X29
+COUNTY	EQU 0X43
+X		EQU 0X30
+Y		EQU 0X31
+XS		EQU 0X32
+YS		EQU 0X33
+FLAG	EQU 0X41
+RES		EQU	0X42
+FLAGY	EQU 0X44
+
+;LIGHTS
+STRONGER	EQU 0X34
+WEAKER	EQU 0X35
+LECTURE	EQU 0X36
+
+;FOTO
+ADC EQU 0x37
+CON EQU 0X38
+CON2 EQU 0X39
+CON3 EQU 0X40
+
+;COMMUNICATION
+DATO_G 	EQU 0X45
+CONR	EQU 0X46
+CONE	EQU 0X47
+MAYG	EQU 0X48 ; grupo mayor
+MAYV	EQU 0X49 ; valor grupo mayor
+MENG	EQU 0X50 ; grupo menor
+MENV	EQU 0X51 ; valor grupo menor
+MAYBG	EQU 0X52 ; grupo mayor backup
+MAYBV	EQU 0X53 ; valor grupo mayor backup
+MENBG	EQU 0X54 ; grupo menor backup
+MENBV	EQU 0X55 ; valor grupo menor backup
+
+INICIO	
+	ORG	0x00
+	GOTO	START
+
+START
+	BSF	STATUS, 5
+	CLRF 	TRISB		;Se configuran los puertos B y D como salidas.
+	;CLRF 	TRISD
+	BSF		TRISC,0
+	BSF		TRISC,1
+	BSF		TRISC,2
+	BSF		TRISC,3
+	
+	BCF		TRISC,4
+	BCF		TRISC,5
+	BCF		TRISC,6
+	BCF		TRISC,7
+	
+	MOVLW	B'10000000'
+	MOVWF	TRISD
+	
+	BCF	STATUS,	5
+	MOVLW	0X00
+	MOVWF	PORTD		;Se limpia el puerto D, poniendo 0 en la salida.
+	
+	bcf STATUS,RP0 ;Ir banco 0
+	bcf STATUS,RP1
+	movlw b'01000001' ;A/D conversion Fosc/8
+	movwf ADCON0
+
+	;     	     7     6     5    4    3    2       1 0
+	; 1Fh ADCON0 ADCS1 ADCS0 CHS2 CHS1 CHS0 GO/DONE ? ADON
+	bsf STATUS,RP0 ;Ir banco 1
+	bcf STATUS,RP1
+	movlw b'00000111'
+	movwf OPTION_REG ;TMR0 preescaler, 1:156
+	;                7    6      5    4    3   2   1   0 
+	; 81h OPTION_REG RBPU INTEDG T0CS T0SE PSA PS2 PS1 PS0
+	movlw b'00001110' ;A/D Port AN0/RA0
+	movwf ADCON1
+	;            7    6     5 4 3     2     1     0 
+	; 9Fh ADCON1 ADFM ADCS2 ? ? PCFG3 PCFG2 PCFG1 PCFG0
+	bsf TRISA,0 ;RA0 linea de entrada para el ADC
+	bcf STATUS,RP0 ;Ir banco 0
+	bcf STATUS,RP1
+	
+	
+	MOVLW	0X00
+	MOVWF	PORTB
+	
+	;Inicializacion de Variables
+	MOVLW	B'00000000'
+	MOVWF	LIGHT
+	MOVLW	B'00000111'
+	MOVWF	sLIGHT
+	MOVLW	B'00000111'
+	MOVWF	wLIGHT
+	MOVLW	B'00000111'
+	MOVWF	ID
+	
+	MOVLW	B'00000111'
+	MOVWF	MENG
+	MOVLW	B'00000111'
+	MOVWF	MAYG
+	
+	MOVLW	B'00000000'
+	MOVWF	CONT
+	MOVLW	B'00000000'
+	MOVWF	DATO
+	MOVLW	B'00000000'
+	MOVWF	X
+	MOVLW	B'00000000'
+	MOVWF	Y
+	MOVLW	B'00000000'
+	MOVWF	XS
+	MOVLW	B'00000000'
+	MOVWF	YS
+	MOVLW 	B'00000000'
+	MOVWF	STRONGER
+	MOVLW 	B'00001001'
+	MOVWF	WEAKER
+	MOVLW	B'00000000'
+	MOVWF	FLAG
+	MOVLW	B'00000000'
+	MOVWF	FLAGY
+	MOVLW   B'00000001'
+	MOVWF	CONE
+	MOVWF	CONR
+	GOTO	MENU
+
+MENU
+	BTFSC	PORTE,1		;Boton que llama al movimiento de los motores.
+	CALL	LOOP
+	BTFSC	PORTE,0		;Boton que realiza el incremento para deplegar en el display.
+	CALL	INC
+	CALL	RETARD
+	BTFSC   PORTE,2 	;Si el bit de enviar enta encendido va a enviar datos
+	CALL	ENVIARDEC
+	CALL	RETARD
+	BTFSC	PORTD,7
+	CALL	RECIBIRDEC
+	GOTO	SWITCH
+	GOTO	MENU
+
+INC
+	MOVLW	D'24'
+	MOVWF	COUNT
+RETDISP
+	CALL	RETARD	
+	DECFSZ	COUNT,1
+	GOTO	RETDISP	
+	
+	INCF	CONT,1		;Incrementa en 1 la variable CONT.
+	BTFSC	CONT,2		;CONT se resetea si llega a 4, por lo cual se verifica el bit 2.
+	CALL	RESET
+	RETURN
+
+RESET
+	MOVLW	B'00000000'	;Reset de la Variable CONT.
+	MOVWF	CONT
+	RETURN
+
+SWITCH
+	BTFSC	CONT,0		;Si el primer bit es 0 quiere decir que es par, por lo cual se 
+	GOTO	ODD		;va a EVEN, de lo contrario se mueve a ODD.
+	GOTO	EVEN
+	
+EVEN
+	BTFSC	CONT,1		
+	GOTO	WEAK	;10	Luz mas debil
+	GOTO	OWN	;00	Lus Propia
+	
+ODD
+	BTFSC	CONT,1
+	GOTO	ID_M	;11	ID del Grupo
+	GOTO	STRONG	;01	Luz mas fuerte
+	
+OWN
+	MOVFW	LIGHT		;Se mueve el valor de la variable correspondiente a DATO
+	MOVWF	DATO		;que es la variable que se envia al display por medio del
+	CALL 	PRINT		;metodo PRINT.
+	GOTO	MENU
+	
+STRONG
+	MOVFW	sLIGHT
+	MOVWF	DATO
+	CALL 	PRINT
+	GOTO	MENU
+	
+WEAK
+	MOVFW	wLIGHT
+	MOVWF	DATO
+	CALL 	PRINT
+	GOTO	MENU
+	
+ID_M
+	MOVFW	ID
+	MOVWF	DATO
+	CALL 	PRINT
+	GOTO	MENU
+
+PRINT			
+	BTFSS 	DATO, 0		;De igual manera que antes, se verifica si el valor de la
+	GOTO	EVEN_D		;variable es par o impar, para eventualmente llegar al numero
+	GOTO 	ODD_D		;que se desea desplegar.
+
+EVEN_D	;0,2,4,8
+	BTFSS	DATO,1
+	GOTO	EVEN_D2 
+	GOTO	EVEN_D4
+
+EVEN_D2	;0,4,8
+	BTFSS	DATO,2
+	GOTO	EVEN_D3
+	GOTO	FOUR
+
+EVEN_D3	;0,8
+	BTFSS	DATO,3
+	GOTO	CERO
+	GOTO	EIGHT	
+
+EVEN_D4	;2,6
+	BTFSS	DATO,2
+	GOTO	TWO
+	GOTO	SIX
+	
+ODD_D	;1,3,5,7,9
+	BTFSC	DATO,1
+	GOTO	ODD_D4 
+	GOTO	ODD_D2 
+
+ODD_D2	;1,5,9
+	BTFSC	DATO,2
+	GOTO	FIVE
+	GOTO	ODD_D3
+
+ODD_D3	;1,9
+	BTFSC	DATO,3
+	GOTO	NINE
+	GOTO	ONE
+
+ODD_D4	;3,7
+	BTFSC	DATO,2
+	GOTO	SEVEN
+	GOTO	THREE
+
+;Metodos multiples para el despliegue de los numeros, debido a que el display de 
+;7 segmentos es de anodo común los 1 y 0 han sido invertidos, a su vez para una mejor
+;distribucion en el protoboard se cambiaron los puertos de salida.
+;a	PORTD,3
+;b	PORTD,4
+;c	PORTD,2
+;d	PORTD,0
+;e	PORTD,1
+;f	PORTD,5
+;g	PORTD,6
+
+CERO				
+	MOVLW	B'11000000'	
+	MOVWF	DATO		
+	CALL	DISPLAY
+	RETURN
+
+ONE
+	MOVLW	B'11101011'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+TWO
+	MOVLW	B'10100100'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+THREE
+	MOVLW	B'10100010'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+FOUR
+	MOVLW	B'10001011'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+FIVE
+	MOVLW	B'10010010'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+SIX
+	MOVLW	B'10010000'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+SEVEN
+	MOVLW	B'11100011'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+EIGHT
+	MOVLW	B'10000000'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+NINE
+	MOVLW	B'10000011'
+	MOVWF	DATO
+	CALL	DISPLAY
+	RETURN
+
+DISPLAY
+	MOVF	DATO, W		;Se mueve el valor de DATO a W para luego moverlo al puerto D.
+	MOVWF	PORTD
+	RETURN
+	
+LOOP				;Controla las llamadas para el movimiento de ambos motores.
+	CALL	RESET_MOTORS	;Desde un inicio se resetean los motores para regresarlos a 
+				;su posicion inicial.
+
+	MOVLW	D'255'		;Ciclo con 246 iteraciones para mover el motor 180°
+	MOVWF	COUNT
+X_FOR
+	CALL	CLOCKWISEX	;Llamada al movimiento
+	DECFSZ	COUNT,1		;Decremento
+	GOTO	X_FOR	
+	
+	MOVLW	D'255'		;Ciclo con 246 iteraciones para regresar el motor 180°
+	MOVWF	COUNT
+X_BACK
+	CALL	ANTICLOCKWISEX	;Llamada al movimiento
+	DECFSZ	COUNT,1		;Decremento
+	GOTO	X_BACK
+	
+	MOVLW	D'0'		;Reinicio del contador X
+	MOVWF	X
+	
+	MOVLW	0X00
+	MOVWF	PORTB
+	
+	CALL 	STRONGXY	;Llamada al metodo que mueve el motor al punto con mas luz.
+	
+	MOVLW	0X00
+	MOVWF	PORTB
+	CALL	RESET
+	RETURN
+
+
+CLOCKWISEX			;Movimeinto del motor X en sentido horario.
+	INCF	X,1		;Incremento de la variable X para eventualmente saber en que
+				;posicion se encuentra el punto con mas luz.
+
+	MOVLW	B'00001001'	;Cuatro pasos necesarios para dar un FULL STEP con el motor.
+	MOVWF	DATO_M		;Se mueve a DATO_M que es la variable que utiliza el metodo MOVE.
+	CALL	MOVE
+
+	MOVLW	B'00001100'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'00000110'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'00000011'
+	MOVWF	DATO_M
+	CALL	MOVE
+	
+	INCF	FLAG,1
+	MOVLW	B'00110011'
+	MOVWF	RES
+	MOVF	FLAG,W
+	SUBWF	RES,0
+	BTFSC	STATUS,Z
+	GOTO	MOVEYJ
+	GOTO	RETLBL
+	
+RETLBL	
+	RETURN
+	
+MOVEYJ	
+	MOVLW	D'255'		;Ciclo con 246 iteraciones para mover el motor Y 180°
+	MOVWF	COUNTY		;Esto quiere decir que por cada paso en X, el motor Y
+LOP				;recorrera los 180°.
+	CALL	ANTICLOCKWISEY
+	DECFSZ	COUNTY,1
+	GOTO	LOP
+
+	MOVLW	D'255'		;Ciclo con 246 iteraciones para regresar el motor Y 180°
+	MOVWF	COUNTY
+LOP1
+	CALL	CLOCKWISEY
+	DECFSZ	COUNTY,1
+	GOTO	LOP1	
+	
+	MOVLW	D'0'		;Reinicio del contador Y
+	MOVWF	Y
+	MOVLW	D'0'
+	MOVWF	FLAG
+	GOTO	RETLBL
+
+CLOCKWISEY			;Movimeinto del motor Y en sentido horario.
+
+	MOVLW	B'10010000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'11000000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'01100000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'00110000'
+	MOVWF	DATO_M
+	CALL	MOVE	
+		
+	RETURN
+
+ANTICLOCKWISEX			;Movimeinto del motor X en sentido anti-horario.
+	MOVLW	B'00000011'
+	MOVWF	DATO_M
+	CALL	MOVE	
+
+	MOVLW	B'00000110'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'00001100'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'00001001'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	RETURN	
+
+ANTICLOCKWISEY			;Movimeinto del motor Y en sentido anti-horario.
+	INCF	Y,1			;Incremento de la variable X para eventualmente saber en que
+						;posicion se encuentra el punto con mas luz.
+
+	MOVLW	B'00110000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'01100000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'11000000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'10010000'
+	MOVWF	DATO_M
+	CALL	MOVE
+	
+	INCF	FLAGY,1
+	MOVLW	B'00010001'
+	MOVWF	RES
+	MOVF	FLAGY,W
+	SUBWF	RES,0
+	BTFSC	STATUS,Z
+	GOTO	FOTO
+	GOTO	RETLBLY
+	
+RETLBLY
+	RETURN	
+	
+FOTO
+	;HERE IT GOES THE LIGHT LECTURE & COMPARISSON
+	CALL	_bucle
+	MOVLW	D'0'
+	MOVWF	FLAGY
+	GOTO	RETLBLY
+
+MOVE				;Metodo que envia los valores a PORT B para el movimiento de motores.
+	MOVF	DATO_M, W
+	MOVWF	PORTB
+	CALL	RETARD		;Retardo para que los motores funcionen correctamente.
+	RETURN
+	
+RETARD				;Metodo que genera el retardo.
+	MOVLW	0xA8
+	MOVWF	d1
+	MOVLW	0x01
+	MOVWF	d2
+	
+DELAY_0
+	DECFSZ	d1, f
+	GOTO	$+2
+	DECFSZ	d2, f
+	GOTO	DELAY_0
+
+			;3 cycles
+	GOTO	$+1
+	NOP	
+	RETURN
+	 
+STRONGXY			;Metodo que mueve los motores de vuelta al punto con mas luz.
+	;Se verifica que los valores de XS o YS no sean 0, de ser asi se hace la llamada al metodo correspondiente.
+	MOVLW	B'00000000'
+	MOVWF	RES
+	MOVF	XS,W
+	SUBWF	RES,0
+	BTFSS	STATUS,Z
+	CALL	MOVEX
+	
+	MOVLW	B'00000000'
+	MOVWF	RES
+	MOVF	XS,W
+	SUBWF	RES,0
+	BTFSS	STATUS,Z
+	CALL	MOVEY
+	
+	MOVF	STRONGER,W
+	MOVWF	MAYV
+	MOVF	ID,W
+	MOVWF	MAYG
+	
+	MOVF	STRONGER,W
+	MOVWF	MENV
+	MOVF	ID,W
+	MOVWF	MENG
+	RETURN
+
+MOVEX				;Metodo que hace un ciclo con la cantidad de pasos necesarios
+	MOVF	XS,W		;para llegar al punto con mas luz en X.
+	MOVWF	COUNT
+X_FINAL
+	CALL	STRONGX
+	DECFSZ	COUNT,1
+	GOTO	X_FINAL
+	RETURN
+	
+MOVEY				;Metodo que hace un ciclo con la cantidad de pasos necesarios
+	MOVF	YS,W		;para llegar al punto con mas luz en Y.
+	MOVWF	COUNT
+Y_FINAL
+	CALL	STRONGY
+	DECFSZ	COUNT,1
+	GOTO	Y_FINAL
+	RETURN
+	
+STRONGX				;Mueve el motor SOLAMENTE en X.
+	MOVLW	B'00001001'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'00001100'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'00000110'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'00000011'
+	MOVWF	DATO_M
+	CALL	MOVE
+	
+	RETURN
+	
+STRONGY				;Mueve el motor SOLAMENTE en Y.
+	MOVLW	B'00110000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'01100000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'11000000'
+	MOVWF	DATO_M
+	CALL	MOVE
+
+	MOVLW	B'10010000'
+	MOVWF	DATO_M
+	CALL	MOVE
+	
+	RETURN
+
+RESET_MOTORS			;Metodo que mueve los motores de vuelta al punto inicial.
+	;Se verifica que los valores de XS o YS no sean 0, de ser asi se hace la llamada al metodo correspondiente.
+	MOVLW	B'00000000'
+	MOVWF	RES
+	MOVF	XS,W
+	SUBWF	RES,0
+	BTFSS	STATUS,Z
+	CALL	RESETX
+	
+	MOVLW	B'00000000'
+	MOVWF	RES
+	MOVF	YS,W
+	SUBWF	RES,0
+	BTFSS	STATUS,Z
+	CALL	RESETY
+
+	RETURN
+
+RESETX				;Metodo que hace un ciclo con la cantidad de pasos necesarios
+	MOVF	XS,W		;para llegar al punto inicial en X.
+	MOVWF	COUNT
+X_RESET
+	CALL	ANTICLOCKWISEX
+	DECFSZ	COUNT,1
+	GOTO	X_RESET
+	RETURN
+
+RESETY				;Metodo que hace un ciclo con la cantidad de pasos necesarios
+	MOVF	YS,W		;para llegar al punto inicial en Y.
+	MOVWF	COUNT
+Y_RESET
+	CALL	CLOCKWISEY
+	DECFSZ	COUNT,1
+	GOTO	Y_RESET
+	RETURN
+	
+COMPARE				;Metodo que compara los valores de Lectura de la fotoresistencia.
+	MOVF	LECTURE,W
+	SUBWF	WEAKER,W	;Se realiza una resta, dependiendo si esta da un resultado  
+	BTFSC	STATUS,C	;negativo o positivo es una lectura de menor o mayor valor 
+	CALL	MINORLECTURE	;a las anteriores.
+
+	MOVF	LECTURE,W
+	SUBWF	STRONGER,W
+	BTFSS	STATUS,C
+	CALL 	GREATERLECTURE
+	RETURN
+
+GREATERLECTURE			;Metodo que almacena los valores de lectura y posicion
+	MOVF	LECTURE,W	;del punto con mas luz en las variables correspondientes.
+	MOVWF	STRONGER
+	MOVF	LECTURE,W
+	MOVWF	LIGHT
+	MOVF	X,W
+	MOVWF	XS
+	MOVF	Y,W
+	MOVWF	YS
+	RETURN
+
+MINORLECTURE			;Metodo que almacena el valore de lectura del punto con 
+	MOVF	LECTURE,W	;menos luz en la variable correspondiente.
+	MOVWF	WEAKER
+	RETURN	
+	
+_bucle
+	;btfss INTCON,T0IF
+	;goto _bucle ;Esperar que el timer0 desborde
+	; SE DEBE DE COLOCAR UN DELAY PARA QUE ESPERE LA CONVERSION
+	BSF	STATUS,Z
+	CALL	_PRESPERA
+	bcf	INTCON,T0IF ;Limpiar el indicador de desborde
+	bsf 	ADCON0,GO ;Comenzar conversion A/D
+_espera
+	btfsc	ADCON0,GO ;ADCON0 es 0? (la conversion esta completa?)
+	goto	_espera ;No, ir _espera
+	movf 	ADRESH,W ;Si, W=ADRESH
+	; 1Eh ADRESH A/D Result Register High Byte
+	; 9Eh ADRESL A/D Result Register Low Byte 
+	MOVWF	ADC
+	;Comparamos el valor del ADC para saber si es menor que 128
+	MOVFW	ADC
+	sublw 	D'210'
+	btfss 	STATUS,C
+	CALL 	NUEVE
+	BTFSS 	STATUS,C
+	RETURN
+	
+	movfw 	ADC ;Comparamos el valor del ADC para saber si es menor que 128
+	sublw 	D'194'
+	btfss 	STATUS,C
+	CALL 	OCHO
+	MOVFW 	ADC 
+	SUBLW 	D'194'
+	BTFSS 	STATUS,C
+	RETURN
+	
+	movfw 	ADC ;Comparamos el valor del ADC para saber si es menor que 128
+	sublw	D'174'
+	btfss	STATUS,C
+	CALL	SIETE
+	MOVFW 	ADC 
+	SUBLW 	D'174'
+	BTFSS 	STATUS,C
+	RETURN
+	
+	movfw	ADC ;Comparamos el valor del ADC para saber si es menor que 128
+	sublw	D'158'
+	btfss	STATUS,C
+	CALL	SEIS
+	MOVFW 	ADC 
+	SUBLW 	D'158'
+	BTFSS 	STATUS,C
+	RETURN
+	
+	movfw	ADC ;Comparamos el valor del ADC para saber si es menor que 128
+	sublw	D'138'
+	btfss	STATUS,C
+	CALL	CINCO
+	MOVFW 	ADC 
+	SUBLW 	D'138'
+	BTFSS 	STATUS,C
+	RETURN
+	
+	movfw	ADC ;Comparamos el valor del ADC para saber si es menor que 128
+	sublw	D'117'
+	btfss	STATUS,C
+	CALL	CUATRO
+	MOVFW 	ADC 
+	SUBLW 	D'117'
+	BTFSS 	STATUS,C
+	RETURN
+	
+	movfw	ADC ;Comparamos el valor del ADC para saber si es menor que 128
+	sublw	D'82'
+	btfss	STATUS,C
+	CALL	TRES
+	MOVFW 	ADC 
+	SUBLW 	D'82'
+	BTFSS 	STATUS,C
+	RETURN
+	
+	movfw	ADC ;Comparamos el valor del ADC para saber si es menor que 128
+	sublw	D'51'
+	btfss	STATUS,C
+	CALL	DOS
+	MOVFW 	ADC 
+	SUBLW 	D'51'
+	BTFSS 	STATUS,C
+	RETURN
+	
+	movfw	ADC ;Comparamos el valor del ADC para saber si es menor que 128
+	sublw	D'28'
+	btfss	STATUS,C
+	CALL	UNO
+	MOVFW 	ADC 
+	SUBLW 	D'28'
+	BTFSS 	STATUS,C
+	RETURN
+	
+	CALL	ZERO
+	RETURN
+
+
+_desactivar
+	bcf PORTB,7 ;RB7 = 0 logico
+	goto _bucle ;Ir bucle
+	
+_PRESPERA
+	MOVLW	0XFF
+	MOVWF	CON
+	MOVWF	CON2
+	MOVWF	CON3
+	CALL	ESPE
+	RETURN
+	
+ESPE
+	DECFSZ	CON,0X01
+	GOTO	ESPE
+	CALL	ESPE2
+	RETURN
+ESPE2
+	DECFSZ	CON2,0X01
+	GOTO	ESPE2
+	CALL	ESPE3
+	RETURN
+ESPE3
+	DECFSZ	CON3,0X01
+	GOTO	ESPE3
+	RETURN
+
+ZERO
+	MOVLW B'00000000'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN
+UNO
+	MOVLW B'00000001'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN
+DOS
+	MOVLW B'00000010'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT	
+	RETURN
+TRES
+	MOVLW B'00000011'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN
+CUATRO
+	MOVLW B'00000100'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN
+CINCO
+	MOVLW B'00000101'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN
+SEIS
+	MOVLW B'00000110'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN
+SIETE
+	MOVLW B'00000111'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN
+OCHO
+	MOVLW B'00001000'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN
+NUEVE
+	MOVLW B'00001001'
+	MOVWF	LECTURE
+	MOVF	LECTURE,W
+	MOVWF	DATO
+	CALL	COMPARE
+	CALL	PRINT
+	RETURN	
+	
+ENVIARDEC ; Decide que enviar encicladamente
+	CALL	RETARD
+	MOVLW	B'00000001'
+	SUBWF	CONE, 0
+	BTFSC	STATUS, Z
+	CALL	ENVIARGM ; enviar grupo mayor
+	CALL	RETARD
+	MOVLW	B'00000010'
+	SUBWF	CONE, 0
+	BTFSC	STATUS, Z
+	CALL	ENVIARVM ; enviar valor mayor
+	CALL	RETARD
+	MOVLW	B'00000011'
+	SUBWF	CONE, 0
+	BTFSC	STATUS, Z
+	CALL	ENVIARGMM ; enviar grupo menor
+	CALL	RETARD
+	MOVLW	B'00000100'
+	SUBWF	CONE, 0
+	BTFSC	STATUS, Z
+	CALL	ENVIARVMM ; enviar valor menor
+	CALL	RETARD
+	MOVLW	B'00000101'
+	SUBWF	CONE, 0
+	BTFSC	STATUS, Z
+	CALL	FINENV; hacer comparacion	
+	INCF	CONE, 1	
+	RETURN
+
+SETBITS
+	BTFSC	DATO_G, 0
+	GOTO	SET11
+	GOTO	SET10
+SETBITS1
+	BTFSC	DATO_G, 1
+	GOTO	SET21
+	GOTO	SET20
+SETBITS2
+	BTFSC	DATO_G, 2
+	GOTO	SET31
+	GOTO	SET30
+SETBITS3
+	BTFSC	DATO_G, 3
+	GOTO	SET41
+	GOTO	SET40
+ENDSET
+	RETURN	
+
+SET11
+	BSF	PORTC, 4
+	GOTO	SETBITS1
+SET10
+	BCF	PORTC, 4
+	GOTO	SETBITS1
+	
+SET21
+	BSF	PORTC, 5
+	GOTO	SETBITS2
+SET20
+	BCF	PORTC, 5
+	GOTO	SETBITS2
+	
+SET31
+	BSF	PORTC, 6
+	GOTO	SETBITS3
+SET30
+	BCF	PORTC, 6
+	GOTO	SETBITS3
+	
+SET41
+	BSF	PORTC, 7
+	GOTO	ENDSET
+SET40
+	BCF	PORTC, 7
+	GOTO	ENDSET
+	
+ENVIARGM
+	MOVF	MAYG, W
+	MOVWF 	DATO_G
+	CALL	SETBITS
+	BTFSC	PORTE, 2
+	GOTO	ENVIARGM 
+	RETURN
+	
+ENVIARVM
+	MOVF	MAYV, W
+	MOVWF 	DATO_G
+	CALL	SETBITS	
+	BTFSC	PORTE, 2
+	GOTO	ENVIARVM 
+	RETURN
+	
+ENVIARGMM
+	MOVF	MENG, W
+	MOVWF 	DATO_G
+	CALL	SETBITS	
+	BTFSC	PORTE, 2
+	GOTO	ENVIARGMM 
+	RETURN
+	
+ENVIARVMM
+	MOVF	MENV, W
+	MOVWF 	DATO_G
+	CALL	SETBITS	
+	BTFSC	PORTE, 2
+	GOTO	ENVIARVMM 
+	RETURN
+
+RECIBIRDEC ; recibe encicladamente
+	CALL	RETARD
+	MOVLW	B'00000001'
+	SUBWF	CONR, 0
+	BTFSC	STATUS, Z
+	CALL	RECIBIRGM ; enviar grupo mayor
+	CALL	RETARD
+	MOVLW	B'00000010'
+	SUBWF	CONR, 0
+	BTFSC	STATUS, Z
+	CALL	RECIBIRVM ; enviar valor mayor
+	CALL	RETARD
+	MOVLW	B'00000011'
+	SUBWF	CONR, 0
+	BTFSC	STATUS, Z
+	CALL	RECIBIRGMM ; enviar grupo menor
+	CALL	RETARD
+	MOVLW	B'00000100'
+	SUBWF	CONR, 0
+	BTFSC	STATUS, Z
+	CALL	RECIBIRVMM ; enviar valor menor	
+	CALL	RETARD
+	MOVLW	B'00000101'
+	SUBWF	CONR, 0
+	BTFSC	STATUS, Z
+	CALL	FINREC; hacer comparacion	
+	INCF	CONR, 1			
+	RETURN
+	
+FINREC
+	MOVLW	B'00000000'
+	MOVWF   CONR
+	CALL	COMPAREMAYORG
+	CALL	COMPAREMENORG
+	BTFSC	PORTD, 7
+	GOTO	FINREC 
+	RETURN
+	
+FINENV
+	MOVLW	B'00000000'
+	MOVWF   CONE
+	BTFSC	PORTE, 2
+	GOTO	FINENV
+	RETURN
+	
+SET11R
+	BSF	DATO_G, 0
+	GOTO	SETBITS1R
+SET10R
+	BCF	DATO_G, 0
+	GOTO	SETBITS1R
+	
+SET21R
+	BSF	DATO_G, 1
+	GOTO	SETBITS2R
+SET20R
+	BCF	DATO_G, 1
+	GOTO	SETBITS2R
+	
+SET31R
+	BSF	DATO_G, 2
+	GOTO	SETBITS3R
+SET30R
+	BCF	DATO_G, 2
+	GOTO	SETBITS3R
+	
+SET41R
+	BSF	DATO_G, 3
+	GOTO	ENDSETR
+SET40R
+	BCF	DATO_G, 3
+	GOTO	ENDSETR
+
+SETBITSR
+	BTFSC	PORTC, 3
+	GOTO	SET11R
+	GOTO	SET10R
+SETBITS1R
+	BTFSC	PORTC, 2
+	GOTO	SET21R
+	GOTO	SET20R
+SETBITS2R
+	BTFSC	PORTC, 1
+	GOTO	SET31R
+	GOTO	SET30R
+SETBITS3R
+	BTFSC	PORTC, 0
+	GOTO	SET41R
+	GOTO	SET40R
+ENDSETR
+	RETURN	
+
+	
+RECIBIRGM
+	CALL	SETBITSR
+	MOVF	DATO_G, W
+	MOVWF	MAYBG
+	
+	BTFSC	PORTD, 7
+	GOTO	RECIBIRGM 
+	RETURN	
+	
+RECIBIRVM
+	CALL	SETBITSR
+	MOVF	DATO_G, W
+	MOVWF	MAYBV
+	BTFSC	PORTD, 7
+	GOTO	RECIBIRVM 
+	RETURN
+
+RECIBIRGMM
+	CALL	SETBITSR
+	MOVF	DATO_G, W
+	MOVWF	MENBG
+	
+	BTFSC	PORTD, 7
+	GOTO	RECIBIRGMM 
+	RETURN	
+
+RECIBIRVMM
+	CALL	SETBITSR
+	MOVF	DATO_G, W
+	MOVWF	MENBV
+	BTFSC	PORTD, 7
+	GOTO	RECIBIRVMM 
+	RETURN
+
+COMPAREMAYORG 
+	MOVF  MAYV, W
+	SUBWF MAYBV, W
+	BTFSS STATUS, C       
+	GOTO  NOCHANGEMAY
+	GOTO  CHANGEMAY	                        
+
+CHANGEMAY
+	MOVF  MAYBG, W 
+        MOVWF MAYG
+		
+	MOVF	MAYBG,W
+	MOVWF	sLIGHT
+        MOVF  MAYBV, W
+        MOVWF MAYV
+	RETURN
+
+NOCHANGEMAY
+	RETURN
+	
+COMPAREMENORG 
+	MOVF  MENV, W
+	SUBWF MENBV, W
+	BTFSS STATUS, C  
+	GOTO  CHANGEMEN     
+	GOTO  NOCHANGEMEN	                        
+
+CHANGEMEN
+	MOVF  MENBG, W 
+        MOVWF MENG
+		
+	MOVF	MENBG,W
+	MOVWF	wLIGHT
+		
+        MOVF  MENBV, W
+        MOVWF MENV
+	RETURN
+
+NOCHANGEMEN
+	RETURN
+END
